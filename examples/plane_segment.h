@@ -69,6 +69,7 @@ private:
 
 public:
     int skip_pixel_;
+    //
     bool use_horizontal_line_;
     bool use_verticle_line_;
     int y_interval_;
@@ -76,9 +77,8 @@ public:
 
     /** \brief Line extraction */
     float line_point_min_distance_;
-    int slide_window_size_;
-    int line_min_inliers_;
-    float line_fitting_threshold_;
+    float line_fitting_angular_threshold_;
+    int line_fitting_min_indices_;
 
     /** \brief Normals per line */
     int normals_per_line_;
@@ -96,6 +96,7 @@ public:
     float max_curvature_;
     float distance_threshold_;
     float neighbor_threshold_;
+    float angular_threshold_;
 
     /** \brief Refine Plane segmentation result. Note: Not Valid. */
     bool solve_over_segment_;
@@ -104,13 +105,10 @@ public:
     bool project_points_;
     bool extract_boundary_;
 
-    ////
-    bool use_normal_cloud_;
     //
     int normal_estimate_method_;
     float normal_estimate_depth_change_factor_;
     float normal_estimate_smoothing_size_;
-    float angular_threshold_;
 
 public:
     /// OMPS

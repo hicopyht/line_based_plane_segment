@@ -63,16 +63,15 @@ void PlaneViewer::run()
         .AddDisplay(d_cam3);
 
     pangolin::CreatePanel("menu3").SetBounds( 0, 1.0, pangolin::Attach::Pix(viewer_width_ - ui_width_*2), pangolin::Attach::Pix(viewer_width_ - ui_width_));
-    pangolin::Var<bool> ps_use_normal_cloud("menu3.Use Normal Cloud", plane_segmentation_->use_normal_cloud_, true);
     pangolin::Var<bool> ps_use_horizontal_line("menu3.Use Horizontal Line", plane_segmentation_->use_horizontal_line_, true);
     pangolin::Var<bool> ps_use_verticle_line("menu3.Use Verticle Line", plane_segmentation_->use_verticle_line_, true);
     pangolin::Var<int> ps_y_interval("menu3.Y Interval", plane_segmentation_->y_interval_, 5, 300);
     pangolin::Var<int> ps_x_interval("menu3.X Interval", plane_segmentation_->x_interval_, 5, 300);
     /** \brief Line extraction */
-    pangolin::Var<float> ps_line_point_min_distance("menu3.ScanPoint Min Distance", plane_segmentation_->line_point_min_distance_, 0.01, 0.1);
-    pangolin::Var<int> ps_slide_window_size("menu3.Slide Window Size", plane_segmentation_->slide_window_size_, 3, 23);
-    pangolin::Var<int> ps_line_min_inliers("menu3.Line Min Size", plane_segmentation_->line_min_inliers_, 7, 43);
-    pangolin::Var<float> ps_line_fitting_threshold("menu3.Line Fitting Thresh", plane_segmentation_->line_fitting_threshold_, 0.2, 4.0);
+    pangolin::Var<float> ps_line_point_min_distance("menu3.Line Point Min Distance", plane_segmentation_->line_point_min_distance_, 0.01, 0.2);
+    pangolin::Var<float> ps_line_fitting_angular_threshold("menu3.Line Fitting Angular Thresh", plane_segmentation_->line_fitting_angular_threshold_, 1.0, 10.0);
+    pangolin::Var<int> ps_line_fitting_min_inliers("menu3.Line Min Size", plane_segmentation_->line_fitting_min_indices_, 7, 37);
+
     /** \brief Normals per line */
     pangolin::Var<int> ps_normals_per_line("menu3.Normals Per Line", plane_segmentation_->normals_per_line_, 1, 5);
     pangolin::Var<int> ps_normal_smoothing_size("menu3.Normal Smooth Size", plane_segmentation_->normal_smoothing_size_, 5, 40);
@@ -114,8 +113,7 @@ void PlaneViewer::run()
     pangolin::Var<bool> saveWindow("menu2.Save Window",false,false);
     pangolin::Var<bool> recordWindow("menu2.Record Window",false,false);
     pangolin::Var<bool> menuResetView("menu2.Reset View",false,false);
-    pangolin::Var<bool> menuStop("menu2.Stop", false, false);
-    pangolin::Var<bool> menuResume("menu2.Resume", false, false);
+    pangolin::Var<bool> menuStopResume("menu2.Stop & Resume", false, false);
     pangolin::Var<bool> menuSaveData("menu2.Save Data", false, false);
 //    pangolin::Var<bool> menuReset("menu2.Reset",false,false);
     pangolin::Var<int> menuSkipPixel("menu2.Skip Pixels", plane_segmentation_->skip_pixel_, 1, 16);
@@ -133,7 +131,6 @@ void PlaneViewer::run()
 
         if( pangolin::Pushed(psUpdate) )
         {
-            plane_segmentation_->use_normal_cloud_ = ps_use_normal_cloud;
             //
             plane_segmentation_->use_horizontal_line_ = ps_use_horizontal_line;
             plane_segmentation_->use_verticle_line_ = ps_use_verticle_line;
@@ -141,9 +138,8 @@ void PlaneViewer::run()
             plane_segmentation_->x_interval_ = ps_x_interval;
             /** \brief Line extraction */
             plane_segmentation_->line_point_min_distance_ = ps_line_point_min_distance;
-            plane_segmentation_->slide_window_size_ = ps_slide_window_size;
-            plane_segmentation_->line_min_inliers_ = ps_line_min_inliers;
-            plane_segmentation_->line_fitting_threshold_ = ps_line_fitting_threshold;
+            plane_segmentation_->line_fitting_angular_threshold_ = ps_line_fitting_angular_threshold;
+            plane_segmentation_->line_fitting_min_indices_ = ps_line_fitting_min_inliers;
             /** \brief Normals per line */
             plane_segmentation_->normals_per_line_ = ps_normals_per_line;
             plane_segmentation_->normal_smoothing_size_ = ps_normal_smoothing_size;
@@ -191,32 +187,18 @@ void PlaneViewer::run()
             exit(0);
             break;
         }
-        if( pangolin::Pushed(menuStop) )
+        if( pangolin::Pushed(menuStopResume) )
         {
             if(!plane_segmentation_->isStopped())
             {
                 plane_segmentation_->setStop();
-                menuStop = pangolin::Var<bool>("menu2.Resume", false, false);
             }
             else
             {
                 plane_segmentation_->setResume();
-                menuStop = pangolin::Var<bool>("menu2.Stop", false, false);
             }
         }
-        if( pangolin::Pushed(menuResume) )
-        {
-            if(!plane_segmentation_->isStopped())
-            {
-                plane_segmentation_->setStop();
-                menuResume = pangolin::Var<bool>("menu2.Resume", false, false);
-            }
-            else
-            {
-                plane_segmentation_->setResume();
-                menuResume = pangolin::Var<bool>("menu2.Stop", false, false);
-            }
-        }
+
         if( pangolin::Pushed(saveWindow) )
             pangolin::SaveWindowOnRender("window_"+timeToStr());
 

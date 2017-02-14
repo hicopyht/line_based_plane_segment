@@ -4,7 +4,6 @@
 PlaneSegment::PlaneSegment(const string &file_setting)
     : stopped_(false)
     , use_omps_(false)
-    , use_normal_cloud_(false)
     , ne_()
     , camera_image_(new CAMERA_INFO(640, 480, 319.5, 239.5, 525.0, 525.0, 1.0))
     , skip_pixel_(2)
@@ -15,8 +14,6 @@ PlaneSegment::PlaneSegment(const string &file_setting)
     plane_segmentor_ = new LineBasedPlaneSegmentation(file_setting);
     resetPlaneSegmentParameters();
 
-    //
-    loadBoolParam(fs, "PlaneSegment.use_normal_cloud", use_normal_cloud_, use_normal_cloud_);
 
     // Set customized camera parameters
     cout << " 'PlaneSegment' load camera parameters..." << endl;
@@ -180,23 +177,18 @@ void PlaneSegment::segment(const cv::Mat &image_rgb, const cv::Mat &image_depth,
     viewer_->setCloud(cloud);
     pushRuntime(procedures, runtimes, start_dura, "Get Point Cloud");
 
-    //
+    // Normal estimation
     pcl::PointCloud<pcl::Normal>::Ptr normal_cloud(new pcl::PointCloud<pcl::Normal>);
-    bool use_normal_cloud = use_normal_cloud_;
-    if(use_normal_cloud)
-    {
-        ne_.setInputCloud(cloud);
-        ne_.compute(*normal_cloud);
-        pushRuntime(procedures, runtimes, start_dura, "Normal Estimation");
-    }
+    ne_.setInputCloud(cloud);
+    ne_.compute(*normal_cloud);
+    pushRuntime(procedures, runtimes, start_dura, "Normal Estimation");
 
     //
     VectorLines lines;
     VectorNormals normals;
     VectorPlanes planes;
     plane_segmentor_->setInputCloud(cloud);
-    if(use_normal_cloud)
-        plane_segmentor_->setNormalCloud(normal_cloud);
+    plane_segmentor_->setNormalCloud(normal_cloud);
 
     // Segmentation by step
     if(!plane_segmentor_->initCompute())
@@ -209,20 +201,19 @@ void PlaneSegment::segment(const cv::Mat &image_rgb, const cv::Mat &image_depth,
     std::vector<NormalType> candidates;
 
     // line fitting using progression approach
-    plane_segmentor_->lineFitting( lines );
+    plane_segmentor_->lineFitting(lines);
     pushRuntime(procedures, runtimes, start_dura, "Line Segmentation");
 
     // compute normal of middle point of line
-    plane_segmentor_->normalEstimate( lines, candidates);
-    pushRuntime(procedures, runtimes, start_dura, "Normal Estimation");
+    plane_segmentor_->candidateDetection(lines, candidates);
+    pushRuntime(procedures, runtimes, start_dura, "Candidates Detection");
 
     // delete reduplicate candidates
-    plane_segmentor_->removeDuplicateCandidates( candidates, normals );
+    plane_segmentor_->removeDuplicateCandidates(candidates, normals);
     pushRuntime(procedures, runtimes, start_dura, "Reduplicated Removal");
 
     // iteratively extract plane
-//    plane_segmentor_->planeExtraction(lines, candidates, normals, planes, plane_segmentor_->solve_over_segment_);
-    plane_segmentor_->planeExtraction2(lines, candidates, normals, planes, plane_segmentor_->solve_over_segment_);
+    plane_segmentor_->planeExtraction(lines, candidates, normals, planes, plane_segmentor_->solve_over_segment_);
     pushRuntime(procedures, runtimes, start_dura, "Plane Extraction");
 
     // Refine boundary
@@ -231,6 +222,7 @@ void PlaneSegment::segment(const cv::Mat &image_rgb, const cv::Mat &image_depth,
 
     //
     plane_segmentor_->deinitCompute();
+
     //
     viewer_->setSegmentResult(lines, normals, planes);
     viewer_->setRuntimes(procedures, runtimes);
@@ -311,12 +303,10 @@ void PlaneSegment::resetPlaneSegmentParameters()
     y_interval_  = plane_segmentor_->y_interval_;
     x_interval_  = plane_segmentor_->x_interval_;
 
-
     /** \brief Line extraction */
     line_point_min_distance_  = plane_segmentor_->line_point_min_distance_;
-    slide_window_size_  = plane_segmentor_->slide_window_size_;
-    line_min_inliers_  = plane_segmentor_->line_min_inliers_;
-    line_fitting_threshold_  = plane_segmentor_->line_fitting_threshold_;
+    line_fitting_angular_threshold_ = plane_segmentor_->line_fitting_angular_threshold_;
+    line_fitting_min_indices_ = plane_segmentor_->line_fitting_min_indices_;
 
     /** \brief Normals per line */
     normals_per_line_  = plane_segmentor_->normals_per_line_;
@@ -334,6 +324,7 @@ void PlaneSegment::resetPlaneSegmentParameters()
     max_curvature_  = plane_segmentor_->max_curvature_;
     distance_threshold_  = plane_segmentor_->distance_threshold_;
     neighbor_threshold_  = plane_segmentor_->neighbor_threshold_;
+    angular_threshold_ = plane_segmentor_->angular_threshold_;
 
     /** \brief Refine Plane segmentation result. Note: Not Valid. */
     solve_over_segment_ = plane_segmentor_->solve_over_segment_;
@@ -341,9 +332,6 @@ void PlaneSegment::resetPlaneSegmentParameters()
     optimize_coefficients_  = plane_segmentor_->optimize_coefficients_;
     project_points_  = plane_segmentor_->project_points_;
     extract_boundary_  = plane_segmentor_->extract_boundary_;
-
-    //
-    angular_threshold_ = plane_segmentor_->angular_threshold_;
 }
 
 void PlaneSegment::updatePlaneSegmentParameters()
@@ -370,10 +358,8 @@ void PlaneSegment::updatePlaneSegmentParameters()
 
     /** \brief Line extraction */
     plane_segmentor_->line_point_min_distance_ = line_point_min_distance_;
-    plane_segmentor_->setLineRegressionParams(slide_window_size_, line_fitting_threshold_, line_min_inliers_);
-//    plane_segmentor_->slide_window_size_ = slide_window_size_;
-//    plane_segmentor_->line_min_inliers_ = line_min_inliers_;
-//    plane_segmentor_->line_fitting_threshold_ = line_fitting_threshold_;
+    plane_segmentor_->line_fitting_angular_threshold_ = line_fitting_angular_threshold_;
+    plane_segmentor_->line_fitting_min_indices_ = line_fitting_min_indices_;
 
     /** \brief Normals per line */
     plane_segmentor_->normals_per_line_ = normals_per_line_;
@@ -391,6 +377,7 @@ void PlaneSegment::updatePlaneSegmentParameters()
     plane_segmentor_->max_curvature_ = max_curvature_;
     plane_segmentor_->distance_threshold_ = distance_threshold_;
     plane_segmentor_->neighbor_threshold_ = neighbor_threshold_;
+    plane_segmentor_->angular_threshold_ = angular_threshold_;
 
     /** \brief Refine Plane segmentation result. Note: Not Valid. */
     plane_segmentor_->solve_over_segment_ = solve_over_segment_;
@@ -398,9 +385,6 @@ void PlaneSegment::updatePlaneSegmentParameters()
     plane_segmentor_->optimize_coefficients_ = optimize_coefficients_;
     plane_segmentor_->project_points_ = project_points_;
     plane_segmentor_->extract_boundary_ = extract_boundary_;
-
-    //
-    plane_segmentor_->angular_threshold_ = angular_threshold_;
 }
 
 

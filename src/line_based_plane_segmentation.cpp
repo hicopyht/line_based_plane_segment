@@ -1,6 +1,6 @@
 #include "line_based_plane_segmentation.h"
 
-#define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
 #include <ros/ros.h>
@@ -34,76 +34,22 @@ const cv::Point2i neighbor8_dir[8] = {cv::Point2i(-1, -1), cv::Point2i(0, -1), c
                                      cv::Point2i(-1, 0),                      cv::Point2i(1, 0),
                                      cv::Point2i(-1, 1), cv::Point2i(0, 1), cv::Point2i(1, 1)};
 
-void loadBoolParam(cv::FileStorage &fs, const std::string &name, bool &var, bool default_value)
-{
-    std::string bstr = fs[name];
-    if(bstr.empty()){
-        var = default_value;
-        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << (default_value?"true":"false") << RESET << endl;
-    }else{
-        if(!bstr.compare("true")){
-            var = true;
-            cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << "true" << RESET << endl;
-        }else{
-            var = false;
-            cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << "false" << RESET << endl;
-        }
-    }
-}
-
-void loadIntParam(cv::FileStorage &fs, const std::string &name, int &var, int default_value)
-{
-    cv::FileNode fn = fs[name];
-    if(fn.empty()){
-        var = default_value;
-        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << default_value << RESET << endl;
-    }else{
-        var = (int)fn;
-        cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << var << RESET << endl;
-    }
-}
-
-void loadFloatParam(cv::FileStorage &fs, const std::string &name, float &var, float default_value)
-{
-    cv::FileNode fn = fs[name];
-    if(fn.empty()){
-        var = default_value;
-        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << default_value << RESET << endl;
-    }else{
-        var = (float)fn;
-        cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << var << RESET << endl;
-    }
-}
-
-void loadDoubleParam(cv::FileStorage &fs, const std::string &name, double &var, double default_value)
-{
-    cv::FileNode fn = fs[name];
-    if(fn.empty()){
-        var = default_value;
-        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << default_value << RESET << endl;
-    }else{
-        var = (double)fn;
-        cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << var << RESET << endl;
-    }
-}
-
 /*------------------------------------------------------------------------------------------*/
 LineBasedPlaneSegmentation::LineBasedPlaneSegmentation(const std::string &setting_file)
     : input_(NULL)
+    , normals_(NULL)
     , indices_mask_(cv::Mat())
+    , ne_()
     , prttcp_(new pcl::DefaultPointRepresentation<PointT>)
     , initialized_(false)
-    , use_normals_(false)
     , compute_initialized_(false)
-    , use_normal_cloud_(false)
     , use_horizontal_line_(true)
     , use_verticle_line_(true)
     , y_interval_(10)
     , x_interval_(10)
     , line_point_min_distance_(0.08f)
-    , slide_window_size_(15)
-    , line_min_inliers_(17)
-    , line_fitting_threshold_(0.8f)
+    , line_fitting_angular_threshold_(3.0)
+    , line_fitting_min_indices_(15)
     , normals_per_line_(1)
     , normal_smoothing_size_(12)
     , normal_min_inliers_percentage_(0.6f)
@@ -111,21 +57,16 @@ LineBasedPlaneSegmentation::LineBasedPlaneSegmentation(const std::string &settin
     , remove_reduplicate_candidate_(true)
     , reduplicate_candidate_normal_thresh_(0.08f)
     , reduplicate_candidate_distance_thresh_(0.02f)
-    , plane_extraction_use_normal_(false)
     , min_inliers_(600)
     , max_curvature_(0.005f)
     , distance_threshold_(0.02f)
     , neighbor_threshold_(0.2f)
+    , angular_threshold_(10.0)
     , solve_over_segment_(true)
     , refine_plane_(false)
     , optimize_coefficients_(true)
     , project_points_(false)
     , extract_boundary_(true)
-    , line_fitting_use_normal_(true)
-    , line_fitting_normal_smoothing_size_(11)
-    , line_fitting_angular_threshold_(3.0)
-    , line_fitting_min_indices_(15)
-    , angular_threshold_(10.0)
     , normal_estimate_method_(0)
     , normal_estimate_depth_change_factor_(0.05)
     , normal_estimate_smoothing_size_(11)
@@ -155,91 +96,64 @@ LineBasedPlaneSegmentation::LineBasedPlaneSegmentation(const std::string &settin
     cout << WHITE << "    fx:     " << GREEN << camera_info_->fx << RESET << endl;
     cout << WHITE << "    ft:     " << GREEN << camera_info_->fy << RESET << endl;
     cout << WHITE << "    scale:  " << GREEN << camera_info_->scale << RESET << endl;
-
-    //
-    // Normal estimation
-    loadIntParam(fs, "NormalEstimate.method", normal_estimate_method_, normal_estimate_method_);
-    loadFloatParam(fs, "NormalEstimate.depth_change_factor", normal_estimate_depth_change_factor_, normal_estimate_depth_change_factor_);
-    loadFloatParam(fs, "NormalEstimate.smoothing_size", normal_estimate_smoothing_size_, normal_estimate_smoothing_size_);
-    switch(normal_estimate_method_)
-    {
-        case 0:
-            ne_.setNormalEstimationMethod(ne_.COVARIANCE_MATRIX);
-            break;
-        case 1:
-            ne_.setNormalEstimationMethod(ne_.AVERAGE_3D_GRADIENT);
-            break;
-        case 2:
-            ne_.setNormalEstimationMethod(ne_.AVERAGE_DEPTH_CHANGE);
-            break;
-        case 3:
-            ne_.setNormalEstimationMethod(ne_.SIMPLE_3D_GRADIENT);
-            break;
-        default:
-            ne_.setNormalEstimationMethod(ne_.COVARIANCE_MATRIX);
-    }
-    ne_.setMaxDepthChangeFactor(normal_estimate_depth_change_factor_);
-    ne_.setNormalSmoothingSize(normal_estimate_smoothing_size_);
-
     //
     std::string prefix = "PlaneSegment.";
-    loadBoolParam(fs, prefix+"use_normal_cloud", use_normal_cloud_, use_normal_cloud_);
     //
     loadBoolParam(fs, prefix+"use_horizontal_line", use_horizontal_line_, use_horizontal_line_);
     loadBoolParam(fs, prefix+"use_verticle_line", use_verticle_line_, use_verticle_line_);
     loadIntParam(fs, prefix+"y_interval", y_interval_, y_interval_);
     loadIntParam(fs, prefix+"x_interval", x_interval_, x_interval_);
+    //
     loadFloatParam(fs, prefix+"line_point_min_distance", line_point_min_distance_, line_point_min_distance_);
-    loadIntParam(fs, prefix+"slide_window_size", slide_window_size_, slide_window_size_);
-    loadIntParam(fs, prefix+"line_min_inliers", line_min_inliers_, line_min_inliers_);
-    loadFloatParam(fs, prefix+"line_fitting_threshold", line_fitting_threshold_, line_fitting_threshold_);
+    loadFloatParam(fs, prefix+"line_fitting_angular_threshold", line_fitting_angular_threshold_, line_fitting_angular_threshold_);
+    loadIntParam(fs, prefix+"line_fitting_min_indices", line_fitting_min_indices_, line_fitting_min_indices_);
+    //
     loadIntParam(fs, prefix+"normals_per_line", normals_per_line_, normals_per_line_);
     loadIntParam(fs, prefix+"normal_smoothing_size", normal_smoothing_size_, normal_smoothing_size_);
     loadFloatParam(fs, prefix+"normal_min_inliers_percentage", normal_min_inliers_percentage_, normal_min_inliers_percentage_);
     loadFloatParam(fs, prefix+"normal_maximum_curvature", normal_maximum_curvature_, normal_maximum_curvature_);
+    //
     loadBoolParam(fs, prefix+"remove_reduplicate_candidate", remove_reduplicate_candidate_, remove_reduplicate_candidate_);
     loadFloatParam(fs, prefix+"reduplicate_candidate_normal_thresh", reduplicate_candidate_normal_thresh_, reduplicate_candidate_normal_thresh_);
     loadFloatParam(fs, prefix+"reduplicate_candidate_distance_thresh", reduplicate_candidate_distance_thresh_, reduplicate_candidate_distance_thresh_);
+    //
     loadIntParam(fs, prefix+"min_inliers", min_inliers_, min_inliers_);
     loadFloatParam(fs, prefix+"max_curvature", max_curvature_, max_curvature_);
     loadFloatParam(fs, prefix+"distance_threshold", distance_threshold_, distance_threshold_);
     loadFloatParam(fs, prefix+"neighbor_threshold", neighbor_threshold_, neighbor_threshold_);
+    loadFloatParam(fs, prefix+"angular_threshold", angular_threshold_, angular_threshold_);
+    //
     loadBoolParam(fs, prefix+"solve_over_segment", solve_over_segment_, solve_over_segment_);
     loadBoolParam(fs, prefix+"refine_plane", refine_plane_, refine_plane_);
     loadBoolParam(fs, prefix+"optimize_coefficients", optimize_coefficients_, optimize_coefficients_);
     loadBoolParam(fs, prefix+"project_points", project_points_, project_points_);
     loadBoolParam(fs, prefix+"extract_boundary", extract_boundary_, extract_boundary_);
+    // Normal estimation
+    loadIntParam(fs, "NormalEstimate.method", normal_estimate_method_, normal_estimate_method_);
+    loadFloatParam(fs, "NormalEstimate.depth_change_factor", normal_estimate_depth_change_factor_, normal_estimate_depth_change_factor_);
+    loadFloatParam(fs, "NormalEstimate.smoothing_size", normal_estimate_smoothing_size_, normal_estimate_smoothing_size_);
 
-    // For line fitting with normals
-    loadBoolParam(fs, prefix+"line_fitting_use_normal", line_fitting_use_normal_, line_fitting_use_normal_);
-    loadIntParam(fs, prefix+"line_fitting_normal_smoothing_size", line_fitting_normal_smoothing_size_, line_fitting_normal_smoothing_size_);
-    loadFloatParam(fs, prefix+"line_fitting_angular_threshold", line_fitting_angular_threshold_, line_fitting_angular_threshold_);
-    loadIntParam(fs, prefix+"line_fitting_min_indices", line_fitting_min_indices_, line_fitting_min_indices_);
-    loadFloatParam(fs, prefix+"angular_threshold", angular_threshold_, angular_threshold_);
+    setNormalEstimateParams(normal_estimate_method_, normal_estimate_depth_change_factor_, normal_estimate_smoothing_size_);
     //
-    loadBoolParam(fs, prefix+"plane_extraction_use_normal", plane_extraction_use_normal_, plane_extraction_use_normal_);
-    //
-    line_segmentor_ = new LineRegressionSegmentation(slide_window_size_, line_min_inliers_, line_fitting_threshold_);
     initialize();
 }
 
 LineBasedPlaneSegmentation::LineBasedPlaneSegmentation(CAMERA_INFO *camera)
     : input_(NULL)
+    , normals_(NULL)
     , indices_mask_(cv::Mat())
+    , ne_()
     , prttcp_(new pcl::DefaultPointRepresentation<PointT>)
     , camera_info_(new CAMERA_INFO(*camera))
     , initialized_(false)
-    , use_normals_(false)
     , compute_initialized_(false)
-    , use_normal_cloud_(false)
     , use_horizontal_line_(true)
     , use_verticle_line_(true)
     , y_interval_(10)
     , x_interval_(10)
     , line_point_min_distance_(0.08f)
-    , slide_window_size_(15)
-    , line_min_inliers_(17)
-    , line_fitting_threshold_(0.8f)
+    , line_fitting_angular_threshold_(3.0)
+    , line_fitting_min_indices_(15)
     , normals_per_line_(1)
     , normal_smoothing_size_(12)
     , normal_min_inliers_percentage_(0.6f)
@@ -247,48 +161,22 @@ LineBasedPlaneSegmentation::LineBasedPlaneSegmentation(CAMERA_INFO *camera)
     , remove_reduplicate_candidate_(true)
     , reduplicate_candidate_normal_thresh_(0.08f)
     , reduplicate_candidate_distance_thresh_(0.02f)
-    , plane_extraction_use_normal_(false)
     , min_inliers_(600)
     , max_curvature_(0.005f)
     , distance_threshold_(0.02f)
     , neighbor_threshold_(0.2f)
+    , angular_threshold_(10.0)
     , solve_over_segment_(true)
     , refine_plane_(false)
     , optimize_coefficients_(true)
     , project_points_(false)
     , extract_boundary_(true)
-    , line_fitting_use_normal_(true)
-    , line_fitting_normal_smoothing_size_(11)
-    , line_fitting_angular_threshold_(3.0)
-    , line_fitting_min_indices_(15)
-    , angular_threshold_(10.0)
     , normal_estimate_method_(0)
     , normal_estimate_depth_change_factor_(0.05)
     , normal_estimate_smoothing_size_(11)
 {
-    line_segmentor_ = new LineRegressionSegmentation(slide_window_size_, line_min_inliers_, line_fitting_threshold_);
-
-    switch(normal_estimate_method_)
-    {
-        case 0:
-            ne_.setNormalEstimationMethod(ne_.COVARIANCE_MATRIX);
-            break;
-        case 1:
-            ne_.setNormalEstimationMethod(ne_.AVERAGE_3D_GRADIENT);
-            break;
-        case 2:
-            ne_.setNormalEstimationMethod(ne_.AVERAGE_DEPTH_CHANGE);
-            break;
-        case 3:
-            ne_.setNormalEstimationMethod(ne_.SIMPLE_3D_GRADIENT);
-            break;
-        default:
-            ne_.setNormalEstimationMethod(ne_.COVARIANCE_MATRIX);
-    }
-    ne_.setMaxDepthChangeFactor(normal_estimate_depth_change_factor_);
-    ne_.setNormalSmoothingSize(normal_estimate_smoothing_size_);
-
-
+    setNormalEstimateParams(normal_estimate_method_, normal_estimate_depth_change_factor_, normal_estimate_smoothing_size_);
+    //
     initialize();
 }
 
@@ -387,17 +275,19 @@ bool LineBasedPlaneSegmentation::initCompute()
     }
 
     // Check if has normal cloud
-    if(normals_ != NULL)
-        use_normals_ = true;
-    else
-        use_normals_ = false;
-
-    // Check if size of normal cloud is feasible
-    if(use_normals_ && (normals_->width != cloud_width_ || normals_->height != cloud_height_))
+    if(normals_ == NULL || normals_->width != cloud_width_ || normals_->height != cloud_height_)
     {
-        PCL_ERROR("Error: Normal cloud width and height are not matched with those from camera parameters.");
-        return (false);
+        normals_ = pcl::PointCloud<pcl::Normal>::Ptr(new pcl::PointCloud<pcl::Normal>);
+        ne_.setInputCloud(input_);
+        ne_.compute(*normals_);
     }
+
+//    // Check if size of normal cloud is feasible
+//    if(normals_->width != cloud_width_ || normals_->height != cloud_height_)
+//    {
+//        PCL_ERROR("Error: Normal cloud width and height are not matched with those from camera parameters.");
+//        return (false);
+//    }
 
     // Check if indices mask is valid, otherwise build a mask.
     if( !validMask() )
@@ -439,7 +329,6 @@ void LineBasedPlaneSegmentation::deinitCompute()
     normals_ = NULL;
     indices_mask_ = cv::Mat();
     compute_initialized_ = false;
-    use_normals_ = false;
 }
 
 //
@@ -462,34 +351,19 @@ void LineBasedPlaneSegmentation::segment(std::vector<LineType>& lines,
         return;
     }
 
-    //
-    if(use_normal_cloud_)
-    {
-        pcl::PointCloud<pcl::Normal>::Ptr normal_cloud(new pcl::PointCloud<pcl::Normal>);
-        ne_.setInputCloud(input_);
-        ne_.compute(*normal_cloud);
-        setNormalCloud(normal_cloud);
-    }
-
-    if(!initCompute())
-    {
-        PCL_ERROR("Error initCompute().");
-        return;
-    }
-
     std::vector<NormalType> candidates;
 
     // line fitting using progression approach
-    lineFitting( lines );
+    lineFitting(lines);
 
     // compute normal of middle point of line
-    normalEstimate( lines, candidates);
+    candidateDetection(lines, candidates);
 
     // delete duplicate candidates
     removeDuplicateCandidates( candidates, normals );
 
     // iteratively extract plane
-    planeExtraction2(lines, candidates, normals, planes, solve_over_segment_);
+    planeExtraction(lines, candidates, normals, planes, solve_over_segment_);
 
     // Refine boundary
     refinePlanes(planes);
@@ -503,34 +377,16 @@ void LineBasedPlaneSegmentation::segment(std::vector<LineType>& lines,
 //
 void LineBasedPlaneSegmentation::lineFitting(std::vector<LineType>& lines)
 {
-    if(line_fitting_use_normal_)
-        lineFittingWithNormals(lines);
-    else
-    {
-        std::vector<int> rows = selected_rows_;
-        std::vector<int> cols = selected_cols_;
+    // Roughly get line regions
+    std::vector<LineType> regions;
+    lineRegions(regions);
 
-        if( use_horizontal_line_ )
-        {
-            for(int i = 0; i < rows.size(); i++)
-            {
-                lineSegmentRow( rows[i], lines );
-            }
-        }
-
-        if( use_verticle_line_ )
-        {
-            for(int i = 0; i < cols.size(); i++)
-            {
-                lineSegmentCol( cols[i], lines );
-            }
-        }
-    }
+    // Segment lines
+    lineSegment(regions, lines);
 }
 
-
 //
-void LineBasedPlaneSegmentation::normalEstimate( std::vector<LineType>& lines, std::vector<NormalType>& normals)
+void LineBasedPlaneSegmentation::candidateDetection( std::vector<LineType>& lines, std::vector<NormalType>& normals)
 {
     for(int i = 0; i < lines.size(); i++)
     {
@@ -619,136 +475,6 @@ void LineBasedPlaneSegmentation::planeExtraction(std::vector<LineType> &lines,
                                                  bool solve_over_segment)
 {
 #ifdef DEBUG
-    std::cout << WHITE << "Extract planes:" << RESET << endl;
-#endif
-
-    int iteration = 0;
-
-#ifdef DEBUG
-    ros::Time start_dura = ros::Time::now();
-#endif
-
-    while(1)
-    {
-        iteration++;
-        std::vector<PlaneType> planes;
-
-        // compute possible planes
-        extractAllPossiblePlanes(normals, planes);
-#ifdef DEBUG
-        cout << BOLDWHITE << " Iteration: " << iteration
-             << ": EA:" << BOLDYELLOW << getScopeTime(start_dura) << RESET;
-#endif
-
-        if(planes.size() < 0)
-            break;
-
-        int max_index;
-
-        if(solve_over_segment)
-        {
-            // Check if there is over-segmentation
-            checkOverSegmentation(lines, line_normals, normals, planes);
-#ifdef DEBUG
-            cout << endl << WHITE << " - Over-segment(red):";
-
-            for( int i = 0; i < planes.size(); i++)
-            {
-                PlaneType &plane = planes[i];
-                if(plane.over_segment)
-                    cout << RED << " " << plane.normal_index;
-                else
-                    cout << GREEN << " " << plane.normal_index;
-            }
-#endif
-
-        }
-
-#ifdef DEBUG
-        cout << BOLDWHITE<< " COS: " << BOLDYELLOW << getScopeTime(start_dura) << RESET;
-#endif
-
-        // Select one
-        if(solve_over_segment)
-            max_index = getPlaneWithGoodIndices( planes );
-        else
-            max_index = getPlaneWithMostIndices(planes);
-
-        // No valid plane, break extraction
-        if( max_index < 0 )
-            break;
-
-#ifdef DEBUG
-        cout << WHITE << " Select " << BLUE << planes[max_index].normal_index << RESET;
-#endif
-
-        // store the biggest one, mark out inlier
-        while( max_index >= 0 )
-        {
-            PlaneType &plane = planes[max_index];
-            computePlaneCoefficient( plane.indices, plane );
-            // check curvature
-            if( plane.curvature > max_curvature_ )
-            {
-                plane.valid = false;
-                normals[plane.normal_index].valid = false;
-                // get next
-                if(solve_over_segment)
-                    max_index = getPlaneWithGoodIndices( planes );
-                else
-                    max_index = getPlaneWithMostIndices(planes);
-
-                if( max_index < 0)
-                    break;
-                //
-#ifdef DEBUG
-                cout << WHITE << " Select " << BLUE << planes[max_index].normal_index << RESET;
-#endif
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        // No valid plane, break
-        if( max_index < 0 )
-            break;
-
-        // Extract one plane
-        int normal_index = planes[max_index].normal_index;
-        extractFinalPlane(planes[max_index], normals[normal_index].center_index);
-        final_planes.push_back( planes[max_index] );
-        normals[normal_index].valid = false;
-
-        // Check if solve over segmentation is needed
-        if(solve_over_segment)
-        {
-            int count = 0;
-            for( int i = 0; i < planes.size(); i++)
-            {
-                if(planes[i].over_segment)
-                    count ++;
-            }
-            if(count <= 0)
-                solve_over_segment = false;
-        }
-
-#ifdef DEBUG
-        cout << BOLDWHITE << " EX: " << BOLDYELLOW << getScopeTime(start_dura) << RESET;
-        cout << endl;
-#endif
-    }
-
-}
-
-void LineBasedPlaneSegmentation::planeExtraction2(std::vector<LineType> &lines,
-                                                  std::vector<NormalType> &line_normals,
-                                                  std::vector<NormalType>& normals,
-                                                  std::vector<PlaneType>& final_planes,
-                                                  bool solve_over_segment)
-{
-#ifdef DEBUG
     std::cout << WHITE << "Extract planes:" << RESET;
 #endif
 
@@ -765,13 +491,19 @@ void LineBasedPlaneSegmentation::planeExtraction2(std::vector<LineType> &lines,
     // compute possible planes
     extractAllPossiblePlanes(normals, planes);
     //
+#ifdef DEBUG
     cout << "EA size: " << BOLDCYAN;
+#endif
     for(std::vector<PlaneType>::iterator itp = planes.begin(), end = planes.end(); itp != end; itp++)
     {
         itp->over_segment = false;
+#ifdef DEBUG
         cout << " " << itp->indices.size();
+#endif
     }
+#ifdef DEBUG
     cout << RESET << endl;
+#endif
 
 
     iteration++;
@@ -784,7 +516,7 @@ void LineBasedPlaneSegmentation::planeExtraction2(std::vector<LineType> &lines,
     int max_index = getOnePlaneIndex(lines, line_normals, normals, planes, solve_over_segment);
 
 
-    while(max_index >= 0 && ros::ok())
+    while(max_index >= 0)
     {
         PlaneType &spl = planes[max_index];
         NormalType &snr = normals[spl.normal_index];
@@ -955,7 +687,6 @@ void LineBasedPlaneSegmentation::refinePlanes(std::vector<PlaneType>& final_plan
 
     for(int i = 0; i < final_planes.size(); i++)
     {
-        cout << BOLDWHITE << "  -rfp" << BOLDCYAN << i;
         PlaneType &pl = final_planes[i];
         // Build search list
         std::stack<cv::Point2i> search_list;
@@ -1019,132 +750,12 @@ void LineBasedPlaneSegmentation::refinePlanes(std::vector<PlaneType>& final_plan
 
 }
 /****************************************************************************************/
-//
-void LineBasedPlaneSegmentation::lineFittingWithNormals(std::vector<LineType>& lines)
-{
-    // Roughly get line regions
-    std::vector<LineType> regions;
-    lineRegionWithNormals(regions);
-
-//    cout << WHITE << " - regions = " << BLUE << regions.size() << RESET << endl;
-
-    // Segment lines
-    lineSegmentWithNormals(regions, lines);
-}
-/*--------------------------------------------------------------------------------------*/
-void LineBasedPlaneSegmentation::lineRegionWithNormals(std::vector<LineType>& regions)
-{
-    std::vector<int> rows = selected_rows_;
-    std::vector<int> cols = selected_cols_;
-    //
-    if( use_horizontal_line_ )
-    {
-        for(int i = 0; i < rows.size(); i++)
-        {
-            lineRegionRow( rows[i], regions );
-        }
-    }
-
-    if( use_verticle_line_ )
-    {
-        for(int i = 0; i < cols.size(); i++)
-        {
-            lineRegionCol( cols[i], regions );
-        }
-    }
-}
-//
-void LineBasedPlaneSegmentation::lineSegmentWithNormals(std::vector<LineType> regions, std::vector<LineType>& lines)
-{
-    const float angular_threshold = cos(DEG2RAD(line_fitting_angular_threshold_));
-    const int min_size = line_fitting_min_indices_;
-
-    // segment
-    for(size_t r = 0; r < regions.size(); r++)
-    {
-        LineType &region = regions[r];
-
-        // compute normals
-        std::vector<Eigen::Vector4f> normals;
-        if(use_normals_)
-        {
-            for(std::vector<int>::iterator itt = region.indices.begin(), end = region.indices.end(); itt != end; itt++)
-            {
-                Eigen::Vector4f n;
-                pcl::Normal &nn = normals_->points[*itt];
-                if(isnan(nn.normal[0]) || isnan(nn.normal[1]) || isnan(nn.normal[2]) || isnan(nn.normal[3]))
-                {
-                    computeNormal(*itt, n);
-                }
-                else
-                {
-                    n << nn.normal[0], nn.normal[1], nn.normal[2], nn.normal[3];
-                }
-                normals.push_back(n);
-            }
-        }
-        else
-        {
-            for(std::vector<int>::iterator itt = region.indices.begin(), end = region.indices.end(); itt != end; itt++)
-            {
-                Eigen::Vector4f n;
-                computeNormal(*itt, n);
-                normals.push_back(n);
-            }
-        }
-
-
-        int start = 0;
-        int end = 0;
-        for(size_t i = 1; i < region.indices.size(); i++)
-        {
-            Eigen::Vector4f &last_normal = normals[end];
-            Eigen::Vector4f &normal = normals[i];
-            float angle;
-            angle = last_normal[0]*normal[0]+last_normal[1]*normal[1]+last_normal[2]*normal[2];
-            if(angle > angular_threshold)   // angle < 2.0 degree, so cos(angle)>cos(d2r(2.0))
-            {
-                end = i;
-            }
-            else
-            {
-                int len = end - start + 1;
-                if(len>min_size)
-                {
-                    LineType l;
-                    l.indices.resize( len );
-                    memcpy( &l.indices[0], &(region.indices[start]), sizeof(int)*len );
-                    lines.push_back(l);
-                }
-                //
-                i++;
-                start = i;
-                end = i;
-            }
-        }
-        // remain line
-        int len = end - start + 1;
-        if(len>min_size)
-        {
-            LineType l;
-            l.indices.resize( len );
-            memcpy( &l.indices[0], &(region.indices[start]), sizeof(int)*len );
-            lines.push_back(l);
-        }
-    }
-
-//    cout << RESET << endl;
-}
-
-
-/******************************/
 /****************************************************************************************/
 // Line extraction
-//
 void LineBasedPlaneSegmentation::lineRegionRow(int row, std::vector<LineType> &regions)
 {
     const float sqare_distance_thresh = line_point_min_distance_ * line_point_min_distance_;
-    const unsigned minimum_inlier = line_min_inliers_;
+    const unsigned minimum_inlier = line_fitting_min_indices_;
 
     const int begin = row * camera_info_->width;
     const int end = begin + camera_info_->width - 1;
@@ -1195,7 +806,7 @@ void LineBasedPlaneSegmentation::lineRegionRow(int row, std::vector<LineType> &r
 void LineBasedPlaneSegmentation::lineRegionCol(int col, std::vector<LineType> &regions)
 {
     const float sqare_distance_thresh = line_point_min_distance_ * line_point_min_distance_;
-    const unsigned minimum_inlier = line_min_inliers_;
+    const unsigned minimum_inlier = line_fitting_min_indices_;
 
     const int begin = col;
     const int step = camera_info_->width;
@@ -1247,131 +858,91 @@ void LineBasedPlaneSegmentation::lineRegionCol(int col, std::vector<LineType> &r
 
 }
 
-//
-void LineBasedPlaneSegmentation::getRowScanPoints(int row, const std::vector<int> &indices, std::vector<ScanPoint> &scan_points)
+void LineBasedPlaneSegmentation::lineRegions(std::vector<LineType>& regions)
 {
-    const float z_k = z_factor_row_[row];
-//    const int start_idx = row * camera_info_->width;
-//    const float invfx = 1.0 / camera_info_->fx;
-    for(int i = 0; i < indices.size(); i++)
+    std::vector<int> rows = selected_rows_;
+    std::vector<int> cols = selected_cols_;
+    //
+    if( use_horizontal_line_ )
     {
-        if( !indices_mask_.at<uchar>(indices[i]) )
-            continue;
-
-        const PointT &pt = input_->points[indices[i]];
-        ScanPoint p;
-        p.y = pt.x;
-        p.x = z_k * pt.z;
-        p.rho = sqrt(p.x * p.x + p.y * p.y);
-        p.phi = atan2(p.y, p.x);
-        p.sinPhi = sin(p.phi);
-        p.cosPhi = cos(p.phi);
-
-//        float zz = pt.z * pt.z;
-//        float stdd = 0.0012 + 0.0019 * pow((pt.z-0.4),2)
-//                + 0.009 * zz - 0.0265 * pt.z + 0.020237
-//                + 0.00273 * zz + 0.00074 * pt.z - 0.00058;
-//        float stdz = fabs(0.01363 * pt.z*pt.z - 0.02728 * pt.z + 0.021161);
-//        float stdz = 0.0012 + 0.0019 * pow((pt.z-0.4),2);
-        float stdz = ((pt.z*9.0-20.237)*pt.z+20.237)*0.001;
-//        float stdx = fabs(0.8 * pt.z *invfx);
-        p.stdrho = fabs(z_k * stdz);
-
-        scan_points.push_back(p);
-    }
-}
-
-//
-void LineBasedPlaneSegmentation::getColScanPoints(int col, const std::vector<int> &indices, std::vector<ScanPoint> &scan_points)
-{
-    const float z_k = z_factor_col_[col];
-//    const int idy_step = camera_info_->width;
-//    const float invfy = 1.0 / camera_info_->fy;
-    for(int i = 0; i < indices.size(); i++)
-    {
-        if( !indices_mask_.at<uchar>(indices[i]) )
-            continue;
-
-        const PointT &pt = input_->points[indices[i]];
-        ScanPoint p;
-        p.y = pt.y;
-        p.x = z_k * pt.z;
-        p.rho = sqrt(p.x * p.x + p.y * p.y);
-        p.phi = atan2(p.y, p.x);
-        p.sinPhi = sin(p.phi);
-        p.cosPhi = cos(p.phi);
-//            float zz = pt.z * pt.z;
-//            float stdd = 0.0012 + 0.0019 * pow((pt.z-0.4),2)
-//                    + 0.009 * zz - 0.0265 * pt.z + 0.020237
-//                    + 0.00273 * zz + 0.00074 * pt.z - 0.00058;
-//            float stdz = fabs(0.01363 * pt.z*pt.z - 0.02728 * pt.z + 0.021161);
-//        float stdz = 0.0012 + 0.0019 * pow((pt.z-0.4),2);
-        float stdz = ((pt.z*9.0-20.237)*pt.z+20.237)*0.001;
-//        float stdy = fabs(0.8 * pt.z *invfy);
-        p.stdrho = fabs(z_k * stdz);
-
-        scan_points.push_back(p);
-    }
-}
-
-//
-void LineBasedPlaneSegmentation::lineSegmentRow(int row, std::vector<LineType>& lines )
-{
-    // first, rough segment line regions
-    std::vector<LineType> regions;
-    lineRegionRow(row, regions);
-
-    // segment as scan points
-    for(int i = 0; i < regions.size(); i++)
-    {
-        // get projected scan point
-        vector<ScanPoint> scan_points;
-        getRowScanPoints(row, regions[i].indices, scan_points);
-        vector<ScanSegment> segments;
-        line_segmentor_->segment(scan_points, segments);
-
-        for(int j = 0; j < segments.size(); j++)
+        for(int i = 0; i < rows.size(); i++)
         {
-            if(segments[j].size >= line_min_inliers_)
-            {
-                LineType l;
-                l.indices.resize( segments[j].size );
-                memcpy( &l.indices[0], &(regions[i].indices[ segments[j].begin ]), sizeof(int)*l.indices.size() );
-                lines.push_back(l);
-            }
+            lineRegionRow( rows[i], regions );
+        }
+    }
+
+    if( use_verticle_line_ )
+    {
+        for(int i = 0; i < cols.size(); i++)
+        {
+            lineRegionCol( cols[i], regions );
         }
     }
 }
-
 //
-void LineBasedPlaneSegmentation::lineSegmentCol(int col, std::vector<LineType>& lines )
+void LineBasedPlaneSegmentation::lineSegment(std::vector<LineType> regions, std::vector<LineType>& lines)
 {
-    // first, rough segment line regions
-    std::vector<LineType> regions;
-    lineRegionCol( col, regions );
+    const float angular_threshold = cos(DEG2RAD(line_fitting_angular_threshold_));
+    const int min_size = line_fitting_min_indices_;
 
-//    cout << " -- Col:" << col << ", regions: " << regions.size() << endl;
-
-    // segment as scan
-    for(int i = 0; i < regions.size(); i++)
+    // segment
+    for(size_t r = 0; r < regions.size(); r++)
     {
-        // get projected scan point
-        vector<ScanPoint> scan_points;
-        getColScanPoints( col, regions[i].indices, scan_points );
-        vector<ScanSegment> segments;
-        line_segmentor_->segment(scan_points, segments );
+        LineType &region = regions[r];
 
-        for(int j = 0; j < segments.size(); j++)
+        // compute normals
+        std::vector<Eigen::Vector4f> normals;
+        for(std::vector<int>::iterator itt = region.indices.begin(), end = region.indices.end(); itt != end; itt++)
         {
-            if(segments[j].size >= line_min_inliers_)
+            Eigen::Vector4f n;
+            pcl::Normal &nn = normals_->points[*itt];
+            if(isnan(nn.normal[0]) || isnan(nn.normal[1]) || isnan(nn.normal[2]) || isnan(nn.normal[3]))
+                computeNormal(*itt, n);
+            else
+                n << nn.normal[0], nn.normal[1], nn.normal[2], nn.normal[3];
+            normals.push_back(n);
+        }
+
+
+        int start = 0;
+        int end = 0;
+        for(size_t i = 1; i < region.indices.size(); i++)
+        {
+            Eigen::Vector4f &last_normal = normals[end];
+            Eigen::Vector4f &normal = normals[i];
+            float angle;
+            angle = last_normal[0]*normal[0]+last_normal[1]*normal[1]+last_normal[2]*normal[2];
+            if(angle > angular_threshold)   // angle < 2.0 degree, so cos(angle)>cos(d2r(2.0))
             {
-                LineType l;
-                l.indices.resize( segments[j].size );
-                memcpy( &l.indices[0], &(regions[i].indices[ segments[j].begin ]), sizeof(int)*l.indices.size() );
-                lines.push_back(l);
+                end = i;
+            }
+            else
+            {
+                int len = end - start + 1;
+                if(len>min_size)
+                {
+                    LineType l;
+                    l.indices.resize( len );
+                    memcpy( &l.indices[0], &(region.indices[start]), sizeof(int)*len );
+                    lines.push_back(l);
+                }
+                //
+                i++;
+                start = i;
+                end = i;
             }
         }
+        // remain line
+        int len = end - start + 1;
+        if(len>min_size)
+        {
+            LineType l;
+            l.indices.resize( len );
+            memcpy( &l.indices[0], &(region.indices[start]), sizeof(int)*len );
+            lines.push_back(l);
+        }
     }
+
 }
 
 /****************************************************************************************/
@@ -1554,7 +1125,7 @@ void LineBasedPlaneSegmentation::computeNormal(int center_index, Eigen::Vector4f
     }
 
     //
-    const int smoothing_size_2 = line_fitting_normal_smoothing_size_ / 2;
+    const int smoothing_size_2 = normal_estimate_smoothing_size_ / 2;
     int start_x = x - smoothing_size_2;
     int end_x = x + smoothing_size_2-1;
     int start_y = y - smoothing_size_2;
@@ -1929,7 +1500,9 @@ int LineBasedPlaneSegmentation::getOnePlaneIndex(std::vector<LineType> &lines,
                                                  std::vector<PlaneType>& planes,
                                                  bool solve_over_segment)
 {
+#ifdef DEBUG
     ros::Time start_dura = ros::Time::now();
+#endif
     int max_index = -1;
 
     if(planes.size() <= 0)
@@ -1996,74 +1569,39 @@ void LineBasedPlaneSegmentation::selectConnectedPlaneRegion (int start_index, Pl
     center_point.y = start_index / cloud_width_;
     center_point.x = start_index - center_point.y * cloud_width_;
     search_list.push( center_point );
+
     // loop while search list is not empty
-    if(!use_normals_ || !plane_extraction_use_normal_)
+    while( search_list.size() > 0)
     {
-        while( search_list.size() > 0)
+        cv::Point2i pc = search_list.top();
+        const PointT &pcenter = input_->points[ pc.y * cloud_width_ + pc.x];
+        search_list.pop();
+        for( int i =0; i < 8; i ++)
         {
-            cv::Point2i pc = search_list.top();
-            const PointT &pcenter = input_->points[ pc.y * cloud_width_ + pc.x];
-            search_list.pop();
-            for( int i =0; i < 8; i ++)
+            // pick one neighbor
+            cv::Point2i pn = pc + neighbor8_dir[i];
+            if( pn.x < 0 || pn.x >= cloud_width_ || pn.y < 0 || pn.y >= cloud_height_ )
+                continue;
+            int idx = pn.y * cloud_width_ + pn.x;
+            const PointT &pneighbor = input_->points[idx];
+            if( mask.at<uchar>( idx )
+                    && checkPointWithDistanceToPlane( idx, coefficients, threshold)
+                    && squareDistancePoint2Point( pcenter,  pneighbor) < square_threshold )
             {
-                // pick one neighbor
-                cv::Point2i pn = pc + neighbor8_dir[i];
-                if( pn.x < 0 || pn.x >= cloud_width_ || pn.y < 0 || pn.y >= cloud_height_ )
-                    continue;
-                int idx = pn.y * cloud_width_ + pn.x;
-                const PointT &pneighbor = input_->points[idx];
-                if( mask.at<uchar>( idx )
-                        && checkPointWithDistanceToPlane( idx, coefficients, threshold)
-                        && squareDistancePoint2Point( pcenter,  pneighbor) < square_threshold )
-                {
-                    // add to indices
-                    indices.push_back( idx );
-                    mask.at<uchar>( idx ) = 0;
-    //                normal.mask.at<uchar>( idx ) = 255;
-                    // add to search list
-                    search_list.push( pn );
-                }
-            } // end for
-        } // end while
-    }
-    else
-    {
-        float cos_threshold = cos(DEG2RAD(angular_threshold_));
-        while( search_list.size() > 0)
-        {
-            cv::Point2i pc = search_list.top();
-            int nidx = pc.y * cloud_width_ + pc.x;
-            const PointT &pcenter = input_->points[nidx];
-            search_list.pop();
-            for( int i =0; i < 8; i ++)
-            {
-                // pick one neighbor
-                cv::Point2i pn = pc + neighbor8_dir[i];
-                if( pn.x < 0 || pn.x >= cloud_width_ || pn.y < 0 || pn.y >= cloud_height_ )
-                    continue;
-                int idx = pn.y * cloud_width_ + pn.x;
-                const PointT &pneighbor = input_->points[idx];
-                if( mask.at<uchar>( idx )
-                        && checkPointWithDistanceToPlane( idx, coefficients, threshold)
-                        && squareDistancePoint2Point( pcenter,  pneighbor) < square_threshold
-//                        && checkNormalDistance(nidx, idx, cos_threshold) )
-                        && checkNormalAngularDistance(idx, coefficients, cos_threshold) )
-                {
-                    // add to indices
-                    indices.push_back( idx );
-                    mask.at<uchar>( idx ) = 0;
-    //                normal.mask.at<uchar>( idx ) = 255;
-                    // add to search list
-                    search_list.push( pn );
-                }
-            } // end for
-        } // end while
-    }
+                // add to indices
+                indices.push_back( idx );
+                mask.at<uchar>( idx ) = 0;
+                // add to search list
+                search_list.push( pn );
+            }
+        } // end for
+    } // end while
+
 }
 
 
 //
-void LineBasedPlaneSegmentation::selectConnectedPlaneRegionAndBoundary ( int start_index,
+void LineBasedPlaneSegmentation::selectConnectedPlaneRegionAndBoundary (int start_index,
                                                                    PlaneCoefficients &coefficients,
                                                                    const float threshold,
                                                                    std::vector<int> &indices,
@@ -2086,94 +1624,51 @@ void LineBasedPlaneSegmentation::selectConnectedPlaneRegionAndBoundary ( int sta
     center_point.y = start_index / cloud_width_;
     center_point.x = start_index - center_point.y * cloud_width_;
     search_list.push( center_point );
-    // loop while search list is not empty
-    if(!use_normals_ || !plane_extraction_use_normal_)
-    {
-        while( search_list.size() > 0)
-        {
-            cv::Point2i pc = search_list.top();
-            const PointT &pcenter = input_->points[ pc.y * cloud_width_ + pc.x];
-            search_list.pop();
-            for( int i =0; i < 8; i ++)
-            {
-                // pick one neighbor
-                cv::Point2i pn = pc + neighbor8_dir[i];
-                if( pn.x < 0 || pn.x >= cloud_width_ || pn.y < 0 || pn.y >= cloud_height_ )
-                    continue;
-                int idx = pn.y * cloud_width_ + pn.x;
-                const PointT &pneighbor = input_->points[idx];
-                if( mask.at<uchar>( idx )
-                        && checkPointWithDistanceToPlane( idx, coefficients, threshold)
-                        && squareDistancePoint2Point( pcenter,  pneighbor) < square_threshold )
-                {
-                    // add to inlier
-                    indices.push_back( idx );
-                    mask.at<uchar>( idx ) = 0;
-                    // mark inlier
-                    plane_mask.at<uchar>( idx ) = 255;
-                    // add to search list
-                    search_list.push( pn );
-                }
-            } // end for
-        } // end while
-    }
-    else
-    {
-        float cos_threshold = cos(DEG2RAD(angular_threshold_));
-        while( search_list.size() > 0)
-        {
-            cv::Point2i pc = search_list.top();
-            int nidx = pc.y * cloud_width_ + pc.x;
-            const PointT &pcenter = input_->points[nidx];
-            search_list.pop();
-            for( int i =0; i < 8; i ++)
-            {
-                // pick one neighbor
-                cv::Point2i pn = pc + neighbor8_dir[i];
-                if( pn.x < 0 || pn.x >= cloud_width_ || pn.y < 0 || pn.y >= cloud_height_ )
-                    continue;
-                int idx = pn.y * cloud_width_ + pn.x;
-                const PointT &pneighbor = input_->points[idx];
-                if( mask.at<uchar>( idx )
-                        && checkPointWithDistanceToPlane( idx, coefficients, threshold)
-                        && squareDistancePoint2Point( pcenter,  pneighbor) < square_threshold
-//                        && checkNormalDistance(nidx, idx, cos_threshold) )
-                        && checkNormalAngularDistance(idx, coefficients, cos_threshold))
-                {
-                    // add to inlier
-                    indices.push_back( idx );
-                    mask.at<uchar>( idx ) = 0;
-                    // mark inlier
-                    plane_mask.at<uchar>( idx ) = 255;
-                    // add to search list
-                    search_list.push( pn );
-                }
-            } // end for
-        } // end while
-    }
 
-    // find boundary
+    // loop while search list is not empty
+    while( search_list.size() > 0)
+    {
+        cv::Point2i pc = search_list.top();
+        const PointT &pcenter = input_->points[ pc.y * cloud_width_ + pc.x];
+        search_list.pop();
+        for( int i =0; i < 8; i ++)
+        {
+            // pick one neighbor
+            cv::Point2i pn = pc + neighbor8_dir[i];
+            if( pn.x < 0 || pn.x >= cloud_width_ || pn.y < 0 || pn.y >= cloud_height_ )
+                continue;
+            int idx = pn.y * cloud_width_ + pn.x;
+            const PointT &pneighbor = input_->points[idx];
+            if( mask.at<uchar>( idx )
+                    && checkPointWithDistanceToPlane( idx, coefficients, threshold)
+                    && squareDistancePoint2Point( pcenter,  pneighbor) < square_threshold )
+            {
+                // add to inlier
+                indices.push_back( idx );
+                mask.at<uchar>( idx ) = 0;
+                // mark inlier
+                plane_mask.at<uchar>( idx ) = 255;
+                // add to search list
+                search_list.push( pn );
+            }
+        } // end for
+    } // end while
+
+
+    // Extract boundary
     cv::Mat boundary_mat;
     cv::threshold( plane_mask, boundary_mat, 100.0, 255, cv::THRESH_BINARY);
-//    cv::Canny( mark, boundary_mat, 50, 150);
     std::vector<std::vector<cv::Point> > contours;
     std::vector<cv::Vec4i> hierarchy;
     std::vector<std::vector<cv::Point> >hulls;
-//    std::vector<std::vector<int> > hulls;
-    //
+    // find boundary
     cv::findContours( boundary_mat, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE, cv::Point(0, 0) );
-    //
-//    cout << "  inlier: " << inliers.size() << ", contours: " << contours.size() << endl;
     for(int i = 0; i < contours.size(); i++)
     {
-//        cout << "   - c: " << contours[i].size();
-//        std::vector<int> hull;
         std::vector<cv::Point> hull;
         cv::convexHull( cv::Mat(contours[i]), hull, true );
         hulls.push_back( hull );
-//        cout << ", h: " << hull.size() << endl;
     }
-
     // save boundary and hull inlier
     for( int i = 0; i < contours[0].size(); i++)
     {
@@ -2258,23 +1753,17 @@ void LineBasedPlaneSegmentation::extractBoundary(std::vector<int> &indices,
     // find boundary
     cv::Mat boundary_mat;
     cv::threshold( mark, boundary_mat, 100.0, 255, cv::THRESH_BINARY);
-//    cv::Canny( mark, boundary_mat, 50, 150);
     std::vector<std::vector<cv::Point> > contours;
     std::vector<cv::Vec4i> hierarchy;
     std::vector<std::vector<cv::Point> >hulls;
-//    std::vector<std::vector<int> > hulls;
     //
     cv::findContours( boundary_mat, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE, cv::Point(0, 0) );
     //
-//    cout << "  indices: " << indices.size() << ", contours: " << contours.size() << endl;
     for(int i = 0; i < contours.size(); i++)
     {
-//        cout << "   - c: " << contours[i].size();
-//        std::vector<int> hull;
         std::vector<cv::Point> hull;
         cv::convexHull( cv::Mat(contours[i]), hull, true );
         hulls.push_back( hull );
-//        cout << ", h: " << hull.size() << endl;
     }
 
     boundary_indices.clear();
@@ -2337,7 +1826,6 @@ void LineBasedPlaneSegmentation::extractAllPossiblePlanes(std::vector<NormalType
             }
         }
     }
-//        cout << YELLOW << " - p: " << planes.size() << RESET << endl;
 }
 
 void LineBasedPlaneSegmentation::extractFinalPlane(PlaneType &plane, int start_index, bool delete_indices)
@@ -2361,68 +1849,58 @@ void LineBasedPlaneSegmentation::extractFinalPlane(PlaneType &plane, int start_i
         deleteInliers(plane.indices);
 }
 
-
-///////////////////////////////////////////////////////////////////////////////////////////
-
-//
-void LineBasedPlaneSegmentation::getScanlineCloud(const PointCloudPtr &input,
-                                            vector<pcl::PointIndices> &indices,
-                                            vector< vector<ScanPoint> > &scans)
+/****************************************************************************************/
+void loadBoolParam(cv::FileStorage &fs, const std::string &name, bool &var, bool default_value)
 {
-    setInputCloud( input );
-    initCompute();
-
-    std::vector<int> rows = selected_rows_;
-    std::vector<int> cols = selected_cols_;
-
-    if( use_horizontal_line_ )
-    {
-        for(int i = 0; i < rows.size(); i++)
-        {
-            // get cloud indices
-            pcl::PointIndices inlier;
-            int idx = rows[i]*input->width;
-            for(int u = 0; u < input->width; u++, idx++)
-            {
-                if(isValidPoint(input->points[idx]))
-                    inlier.indices.push_back( idx );
-            }
-
-            // get projected scan point
-            vector<ScanPoint> scan;
-            getRowScanPoints( rows[i], inlier.indices, scan );
-
-            // save data
-            indices.push_back( inlier );
-            scans.push_back( scan );
+    std::string bstr = fs[name];
+    if(bstr.empty()){
+        var = default_value;
+        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << (default_value?"true":"false") << RESET << endl;
+    }else{
+        if(!bstr.compare("true")){
+            var = true;
+            cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << "true" << RESET << endl;
+        }else{
+            var = false;
+            cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << "false" << RESET << endl;
         }
     }
+}
 
-    if( use_verticle_line_ )
-    {
-        for(int i = 0; i < cols.size(); i++)
-        {
-            // get cloud indices
-            pcl::PointIndices inlier;
-            int idx = cols[i];
-            const int step = input->width;
-            for(int v = 0; v < input->height; v++, idx+=step)
-            {
-                if(isValidPoint(input->points[idx]))
-                    inlier.indices.push_back( idx );
-            }
-
-            // get projected scan point
-            vector<ScanPoint> scan;
-            getColScanPoints( cols[i], inlier.indices, scan );
-
-            // save data
-            indices.push_back( inlier );
-            scans.push_back( scan );
-        }
+void loadIntParam(cv::FileStorage &fs, const std::string &name, int &var, int default_value)
+{
+    cv::FileNode fn = fs[name];
+    if(fn.empty()){
+        var = default_value;
+        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << default_value << RESET << endl;
+    }else{
+        var = (int)fn;
+        cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << var << RESET << endl;
     }
+}
 
-    deinitCompute();
+void loadFloatParam(cv::FileStorage &fs, const std::string &name, float &var, float default_value)
+{
+    cv::FileNode fn = fs[name];
+    if(fn.empty()){
+        var = default_value;
+        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << default_value << RESET << endl;
+    }else{
+        var = (float)fn;
+        cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << var << RESET << endl;
+    }
+}
+
+void loadDoubleParam(cv::FileStorage &fs, const std::string &name, double &var, double default_value)
+{
+    cv::FileNode fn = fs[name];
+    if(fn.empty()){
+        var = default_value;
+        cout << WHITE << "  - " << BLUE << name << WHITE << " default " << YELLOW << default_value << RESET << endl;
+    }else{
+        var = (double)fn;
+        cout << WHITE << "  - " << BLUE << name << WHITE << " load " << CYAN << var << RESET << endl;
+    }
 }
 
 }

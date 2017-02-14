@@ -54,7 +54,6 @@ include_directories(
 #set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 
 add_library(${PROJECT_NAME} SHARED
-  src/line_extraction.cpp
   src/line_based_plane_segmentation.cpp
 )
 

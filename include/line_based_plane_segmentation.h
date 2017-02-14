@@ -13,8 +13,9 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include "line_extraction.h"
 #include <stack>
+
+using namespace std;
 
 namespace line_based_plane_segment
 {
@@ -24,8 +25,6 @@ void loadIntParam(cv::FileStorage &fs, const std::string &name, int &var, int de
 void loadFloatParam(cv::FileStorage &fs, const std::string &name, float &var, float default_value);
 void loadDoubleParam(cv::FileStorage &fs, const std::string &name, double &var, double default_value);
 
-//void loadBoolParam(cv::FileStorage &fs, const std::string &name, bool &var, bool default_value);
-//template<class T> void loadParam(cv::FileStorage &fs, const std::string &name, T &var, T default_value);
 
 typedef pcl::PointXYZRGBA PointT;
 typedef pcl::PointCloud<PointT> PointCloud;
@@ -95,8 +94,6 @@ struct PlaneType
     float d;
     Eigen::MatrixXf basis;
 
-    //
-//    cv::Mat distance_mask;
 };
 
 class LineBasedPlaneSegmentation
@@ -106,19 +103,20 @@ public:
     LineBasedPlaneSegmentation(CAMERA_INFO *camera);
     //
     void initialize();  // Build zfactor and update selected rows/cols
-    //
     void setCameraInfo(CAMERA_INFO &camera) { camera_info_ = new CAMERA_INFO(camera); initialized_ = false;}
     void updateSelectedRowsAndCols();   // Update selected rows/cols
+
+    // Set input cloud
     void setInputCloud(const PointCloudPtr &cloud) { input_ = cloud; }
-    inline PointCloudConstPtr const getInputCloud () { return (input_); }
+    PointCloudConstPtr const getInputCloud () { return (input_); }
 
+    // Set mask, otherwise it will be built
     void setMask(cv::Mat &mask) { indices_mask_ = mask; }
-    inline cv::Mat const getMask(){ return indices_mask_; }
+    cv::Mat const getMask(){ return indices_mask_; }
 
+    // Set normals, otherwise it will be calculated
     void setNormalCloud(const pcl::PointCloud<pcl::Normal>::Ptr &normals) { normals_ = normals; }
-    inline pcl::PointCloud<pcl::Normal>::Ptr const getNormalCloud() { return(normals_); }
-
-    // Solve the over-segment problem
+    pcl::PointCloud<pcl::Normal>::Ptr const getNormalCloud() { return(normals_); }
 
     void segment(std::vector<PlaneType>& planes);
 
@@ -126,39 +124,25 @@ public:
                  std::vector<NormalType>& normals,
                  std::vector<PlaneType>& planes);
 
-    void getScanlineCloud(const PointCloudPtr &input,
-                          vector<pcl::PointIndices> &indices,
-                          vector< vector<ScanPoint> > &scans);
-
     const CAMERA_INFO &getCameraParameters() { return *camera_info_; }
 
     // Each individual step of segmentation
     bool initCompute();
     void lineFitting( std::vector<LineType>& lines );
-    void normalEstimate( std::vector<LineType>& lines, std::vector<NormalType>& normals);
+    void candidateDetection( std::vector<LineType>& lines, std::vector<NormalType>& normals);
     void removeDuplicateCandidates( std::vector<NormalType>& normals, std::vector<NormalType>& output);
     void planeExtraction(std::vector<LineType> &lines, std::vector<NormalType> &line_normals,
                          std::vector<NormalType>& normals, std::vector<PlaneType>& final_planes,
                          bool solve_over_segment = true);
-    void planeExtraction2(std::vector<LineType> &lines, std::vector<NormalType> &line_normals,
-                          std::vector<NormalType>& normals, std::vector<PlaneType>& final_planes,
-                          bool solve_over_segment = true);
     void refinePlanes(std::vector<PlaneType>& final_planes);
     void deinitCompute();
-
-    // With normals
-    void lineFittingWithNormals(std::vector<LineType>& lines);
-    void lineRegionWithNormals(std::vector<LineType>& regions);
-    void lineSegmentWithNormals(std::vector<LineType> regions, std::vector<LineType>& lines);
 
 private:
     // Line extraction
     void lineRegionRow(int row, std::vector<LineType> &regions);
     void lineRegionCol(int col, std::vector<LineType> &regions);
-    void getRowScanPoints(int row, const std::vector<int> &indices, std::vector<ScanPoint> &scan_points);
-    void getColScanPoints(int col, const std::vector<int> &indices, std::vector<ScanPoint> &scan_points);
-    void lineSegmentRow(int row, std::vector<LineType>& lines );
-    void lineSegmentCol(int col, std::vector<LineType>& lines );
+    void lineRegions(std::vector<LineType>& regions);
+    void lineSegment(std::vector<LineType> regions, std::vector<LineType>& lines);
     // Normal extimation
     void selectedNormalNeighbors( int index, std::vector<int> &indices );
     unsigned countNormalNeighbors( int index );
@@ -284,7 +268,6 @@ private:
     }
 
 public:
-    bool use_normal_cloud_;
     //
     bool use_horizontal_line_;
     bool use_verticle_line_;
@@ -293,16 +276,8 @@ public:
 
     /** \brief Line extraction */
     float line_point_min_distance_;
-    int slide_window_size_;
-    int line_min_inliers_;
-    float line_fitting_threshold_;
-    void setLineRegressionParams(int window_size, float fidelity, int min_inlier)
-    {
-        line_segmentor_->setParameters(window_size, fidelity, min_inlier);
-        slide_window_size_ = window_size;
-        line_fitting_threshold_ = fidelity;
-        line_min_inliers_ = min_inlier;
-    }
+    float line_fitting_angular_threshold_;
+    int line_fitting_min_indices_;
 
     /** \brief Normals detection */
     int normals_per_line_;
@@ -316,11 +291,11 @@ public:
     float reduplicate_candidate_distance_thresh_;
 
     /** \brief Plane extraction */
-    bool plane_extraction_use_normal_;
     int min_inliers_;
     float max_curvature_;
     float distance_threshold_;
     float neighbor_threshold_;
+    float angular_threshold_;
 
     /** \brief Refine Plane segmentation result. Note: Not Valid. */
     bool solve_over_segment_;
@@ -329,29 +304,36 @@ public:
     bool project_points_;
     bool extract_boundary_;
 
-    //
-    bool line_fitting_use_normal_;
-    int line_fitting_normal_smoothing_size_;
-    float line_fitting_angular_threshold_;
-    int line_fitting_min_indices_;
-    float angular_threshold_;
-
-    //
-    //
+    /** \brief Normal estimation */
     int normal_estimate_method_;
     float normal_estimate_depth_change_factor_;
     float normal_estimate_smoothing_size_;
+    void setNormalEstimateParams(int method, float depth_change_factor, float smoothing_size)
+    {
+        normal_estimate_method_ = method;
+        normal_estimate_depth_change_factor_ = depth_change_factor;
+        normal_estimate_smoothing_size_ = smoothing_size;
+        //
+        switch(normal_estimate_method_)
+        {
+            case 0: ne_.setNormalEstimationMethod(ne_.COVARIANCE_MATRIX); break;
+            case 1: ne_.setNormalEstimationMethod(ne_.AVERAGE_3D_GRADIENT); break;
+            case 2: ne_.setNormalEstimationMethod(ne_.AVERAGE_DEPTH_CHANGE); break;
+            case 3: ne_.setNormalEstimationMethod(ne_.SIMPLE_3D_GRADIENT); break;
+            default: ne_.setNormalEstimationMethod(ne_.COVARIANCE_MATRIX);
+        }
+        ne_.setMaxDepthChangeFactor(normal_estimate_depth_change_factor_);
+        ne_.setNormalSmoothingSize(normal_estimate_smoothing_size_);
+    }
 
 private:
     bool initialized_;
     bool compute_initialized_;
-    bool use_normals_;
     //
     PointCloudConstPtr input_;
     cv::Mat indices_mask_;
     pcl::PointCloud<pcl::Normal>::Ptr normals_;
     //
-    LineRegressionSegmentation* line_segmentor_;
     PointRepresentationConstPtr prttcp_;
     CAMERA_INFO* camera_info_;
     int cloud_width_;

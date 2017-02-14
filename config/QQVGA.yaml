@@ -1,0 +1,114 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# ROS Parameters.
+#--------------------------------------------------------------------------------------------
+ROS.queue_size: 4
+# Kaqi
+#ROS.topic_rgb: "/head_kinect/rgb/image_rect_color"
+#ROS.topic_depth: "/head_kinect/depth_registered/image"
+# TUM3
+ROS.topic_rgb: "/camera/rgb/image_color"
+ROS.topic_depth: "/camera/depth/image"
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters.
+#--------------------------------------------------------------------------------------------
+Camera.fx: 535.4
+Camera.fy: 539.2
+Camera.cx: 320.1
+Camera.cy: 247.6
+Camera.width: 640
+Camera.height: 480
+
+# Camera frames per second
+Camera.fps: 15.0
+
+# Scale for depth value
+Camera.scale: 1.0
+
+# PointCloud resolution(VGA: 1, QVGA 2, QQVGA 4, 8 or 16)
+Camera.skip_pixels: 4
+
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters.
+#--------------------------------------------------------------------------------------------
+Viewer.width: 1280
+Viewer.height: 720
+Viewer.ui_width: 320
+
+# Actually, pangolin::ModelViewLookAt(viewpoint_x_,viewpoint_y_,0, 0,0,-viewpoint_z_, 0.0,-1.0, 0.0)
+Viewer.viewpoint_x: 0.0
+Viewer.viewpoint_y: -0.0
+Viewer.viewpoint_z: -0.1
+Viewer.viewpoint_f: 460.0
+
+# 
+Viewer.cloud_point_size: 1.5
+Viewer.line_point_size: 4.0
+Viewer.normal_point_size: 4.0
+Viewer.plane_point_size: 1.5
+Viewer.boundary_point_size: 2.5
+Viewer.hull_point_size: 4.0
+
+
+#--------------------------------------------------------------------------------------------
+# Plane Segmentation Parameters.
+# For different cloud resolution, usually adjust the follow parameters:
+#   - y_interval
+#   - x_interval
+#   - slide_window_size
+#   - line_min_inliers
+#   - normal_smoothing_size
+#   - min_inliers
+#   - neighbor_threshold
+#--------------------------------------------------------------------------------------------
+PlaneSegment.use_normal_cloud: true
+#
+PlaneSegment.use_horizontal_line: true
+PlaneSegment.use_verticle_line: true
+PlaneSegment.y_interval: 11
+PlaneSegment.x_interval: 11
+#
+PlaneSegment.line_point_min_distance: 0.12
+PlaneSegment.slide_window_size: 13
+PlaneSegment.line_min_inliers: 17
+PlaneSegment.line_fitting_threshold: 0.6
+#
+PlaneSegment.normals_per_line: 1
+PlaneSegment.normal_smoothing_size: 13
+PlaneSegment.normal_min_inliers_percentage: 0.6
+PlaneSegment.normal_maximum_curvature: 0.004
+#
+PlaneSegment.remove_reduplicate_candidate: true
+PlaneSegment.reduplicate_candidate_normal_thresh: 0.05
+PlaneSegment.reduplicate_candidate_distance_thresh: 0.02
+#
+PlaneSegment.min_inliers: 600
+PlaneSegment.max_curvature: 0.005
+PlaneSegment.distance_threshold: 0.02
+PlaneSegment.neighbor_threshold: 0.20
+#
+PlaneSegment.solve_over_segment: false
+PlaneSegment.refine_plane: true
+PlaneSegment.optimize_coefficients: true
+PlaneSegment.project_points: false
+PlaneSegment.extract_boundary: true
+##
+PlaneSegment.line_fitting_use_normal: true
+PlaneSegment.line_fitting_normal_smoothing_size: 11
+PlaneSegment.line_fitting_angular_threshold: 3.0
+PlaneSegment.line_fitting_min_indices: 15
+PlaneSegment.angular_threshold: 10.0
+##
+PlaneSegment.plane_extraction_use_normal: true
+
+#--------------------------------------------------------------------------------------------
+# Normal estimation.
+#--------------------------------------------------------------------------------------------
+# Normal estimate method, 0: COVARIANCE_MATRIX, 1: AVERAGE_3D_GRADIENT, 2: AVERAGE_DEPTH_CHANGE, 3: SIMPLE_3D_GRADIENT
+NormalEstimate.method: 0
+NormalEstimate.depth_change_factor: 0.05
+NormalEstimate.smoothing_size: 11
+

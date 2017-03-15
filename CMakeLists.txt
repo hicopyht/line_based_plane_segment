@@ -31,7 +31,7 @@ LIST( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )
 find_package(Boost REQUIRED COMPONENTS system signals thread)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV 2.4.8 REQUIRED)
-find_package(PCL 1.7 REQUIRED)
+find_package(PCL 1.7 REQUIRED COMPONENTS common io features filters segmentation)
 find_package(Pangolin REQUIRED)
 
 catkin_package(
@@ -40,6 +40,8 @@ catkin_package(
 #  CATKIN_DEPENDS cv_bridge message_filters roscpp sensor_msgs
 #  DEPENDS system_lib
 )
+
+set(BUILD_EXAMPLES 1)
 
 include_directories(
   ${PROJECT_SOURCE_DIR}
@@ -64,39 +66,40 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Build an example
-add_library(segment_example SHARED
-  examples/plane_segment.cpp
-  examples/plane_viewer.cpp
-  examples/organized_multi_plane_segmentor.cpp
-)
-target_link_libraries(segment_example
-  ${OpenCV_LIBS}
-  ${EIGEN3_LIBS}
-  ${PCL_LIBRARIES}
-  ${Pangolin_LIBRARIES}
-  ${PROJECT_NAME}
-)
+if(BUILD_EXAMPLES)
+    add_library(segment_example SHARED
+      examples/plane_segment.cpp
+      examples/plane_viewer.cpp
+      examples/organized_multi_plane_segmentor.cpp
+    )
+    target_link_libraries(segment_example
+      ${OpenCV_LIBS}
+      ${EIGEN3_LIBS}
+      ${PCL_LIBRARIES}
+      ${Pangolin_LIBRARIES}
+      ${PROJECT_NAME}
+    )
 
-set(LIBS
-  ${OpenCV_LIBS}
-  ${EIGEN3_LIBS}
-  ${PCL_LIBRARIES}
-  ${Pangolin_LIBRARIES}
-  ${PROJECT_NAME}
-  segment_example
-  ${catkin_LIBRARIES}
-)
+    set(LIBS
+      ${OpenCV_LIBS}
+      ${EIGEN3_LIBS}
+      ${PCL_LIBRARIES}
+      ${Pangolin_LIBRARIES}
+      ${PROJECT_NAME}
+      segment_example
+      ${catkin_LIBRARIES}
+    )
 
-#set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/example)
-add_executable(plane_segment_rgbd examples/plane_segment_rgbd.cpp)
-target_link_libraries(plane_segment_rgbd ${LIBS})
+    add_executable(plane_segment_rgbd examples/plane_segment_rgbd.cpp)
+    target_link_libraries(plane_segment_rgbd ${LIBS})
 
-add_executable(plane_segment_images examples/plane_segment_images.cpp)
-target_link_libraries(plane_segment_images ${LIBS})
+    add_executable(plane_segment_images examples/plane_segment_images.cpp)
+    target_link_libraries(plane_segment_images ${LIBS})
 
-#set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/example)
-add_executable(omps_segment_rgbd examples/omps_segment_rgbd.cpp)
-target_link_libraries(omps_segment_rgbd ${LIBS})
+    add_executable(omps_segment_rgbd examples/omps_segment_rgbd.cpp)
+    target_link_libraries(omps_segment_rgbd ${LIBS})
 
-add_executable(omps_segment_images examples/omps_segment_images.cpp)
-target_link_libraries(omps_segment_images ${LIBS})
+    add_executable(omps_segment_images examples/omps_segment_images.cpp)
+    target_link_libraries(omps_segment_images ${LIBS})
+
+endif()

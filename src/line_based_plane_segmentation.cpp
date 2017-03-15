@@ -388,7 +388,7 @@ void LineBasedPlaneSegmentation::lineFitting(std::vector<LineType>& lines)
 //
 void LineBasedPlaneSegmentation::candidateDetection( std::vector<LineType>& lines, std::vector<NormalType>& normals)
 {
-    for(int i = 0; i < lines.size(); i++)
+    for(size_t i = 0; i < lines.size(); i++)
     {
         LineType &line = lines[i];
         int len = line.indices.size();
@@ -417,7 +417,7 @@ void LineBasedPlaneSegmentation::removeDuplicateCandidates( std::vector<NormalTy
 
         // compute local coordinate
         std::vector<bool> duplicates;
-        for( int i = 0; i < normals.size(); i++)
+        for( size_t i = 0; i < normals.size(); i++)
         {
             NormalType &normal = normals[i];
             if(!normal.valid)
@@ -434,7 +434,7 @@ void LineBasedPlaneSegmentation::removeDuplicateCandidates( std::vector<NormalTy
             if(duplicates[i])
                 continue;
 
-            for( int j = i+1; j < normals.size(); j++)
+            for( size_t j = i+1; j < normals.size(); j++)
             {
                 if(duplicates[j])
                     continue;
@@ -456,7 +456,7 @@ void LineBasedPlaneSegmentation::removeDuplicateCandidates( std::vector<NormalTy
 
         // construct output
         output.clear();
-        for( int i = 0; i < duplicates.size(); i++)
+        for( size_t i = 0; i < duplicates.size(); i++)
         {
             if( !duplicates[i] )
                 output.push_back( normals[i] );
@@ -555,7 +555,7 @@ void LineBasedPlaneSegmentation::planeExtraction(std::vector<LineType> &lines,
         std::vector<PlaneType> remain_planes;
         int os_index = -1;
         int size_indices, size_remain;
-        for(int i = 0; i < planes.size(); i++)
+        for(size_t i = 0; i < planes.size(); i++)
         {
             if(i == max_index)
                 continue;
@@ -648,7 +648,7 @@ void LineBasedPlaneSegmentation::planeExtraction(std::vector<LineType> &lines,
         if(solve_over_segment)
         {
             int count = 0;
-            for( int i = 0; i < planes.size(); i++)
+            for( size_t i = 0; i < planes.size(); i++)
             {
                 if(planes[i].over_segment)
                     count ++;
@@ -685,7 +685,7 @@ void LineBasedPlaneSegmentation::refinePlanes(std::vector<PlaneType>& final_plan
     const float threshold = distance_threshold_;
     const float square_threshold = neighbor_threshold_ * neighbor_threshold_;
 
-    for(int i = 0; i < final_planes.size(); i++)
+    for(size_t i = 0; i < final_planes.size(); i++)
     {
         PlaneType &pl = final_planes[i];
         // Build search list
@@ -865,7 +865,7 @@ void LineBasedPlaneSegmentation::lineRegions(std::vector<LineType>& regions)
     //
     if( use_horizontal_line_ )
     {
-        for(int i = 0; i < rows.size(); i++)
+        for(size_t i = 0; i < rows.size(); i++)
         {
             lineRegionRow( rows[i], regions );
         }
@@ -873,7 +873,7 @@ void LineBasedPlaneSegmentation::lineRegions(std::vector<LineType>& regions)
 
     if( use_verticle_line_ )
     {
-        for(int i = 0; i < cols.size(); i++)
+        for(size_t i = 0; i < cols.size(); i++)
         {
             lineRegionCol( cols[i], regions );
         }
@@ -1289,7 +1289,7 @@ bool LineBasedPlaneSegmentation::checkOverSegmentation(std::vector<LineType> &li
     valid_line_indices.reserve(line_normals.size());
 //    const unsigned int window_size = slide_window_size_;
     const unsigned int cutoff = 5;//
-    for( int i = 0; i < line_normals.size(); i++)
+    for( size_t i = 0; i < line_normals.size(); i++)
     {
         LineType &line = lines[line_normals[i].line_index];
         if(line.valid)
@@ -1317,7 +1317,7 @@ bool LineBasedPlaneSegmentation::checkOverSegmentation(std::vector<LineType> &li
 //    cout << BOLDMAGENTA << " LVI: " << BOLDYELLOW << getScopeTime(start_dura) << RESET;
 
     const int min_normal_indices = normal_smoothing_size_*normal_smoothing_size_* 4 / 5;
-    for( int i = 0; i < planes.size(); i++ )
+    for( size_t i = 0; i < planes.size(); i++ )
     {
         PlaneType &plane = planes[i];
         NormalType &normal = normals[plane.normal_index];
@@ -1325,7 +1325,7 @@ bool LineBasedPlaneSegmentation::checkOverSegmentation(std::vector<LineType> &li
             continue;
 
         plane.over_segment = false; // Set false first
-        for( int j = 0; j < line_normals.size(); j++)
+        for( size_t j = 0; j < line_normals.size(); j++)
         {
             NormalType &line_normal = line_normals[j];
             if(!line_normal.valid || normal.line_index == line_normal.line_index)
@@ -1346,7 +1346,7 @@ bool LineBasedPlaneSegmentation::checkOverSegmentation(std::vector<LineType> &li
             // check if line & plane have intersection point
             float min_p2p = 1.0;
             int min_index = -1;
-            for(int k = 0; k < valid_indices.size(); k++)
+            for(size_t k = 0; k < valid_indices.size(); k++)
             {
                 float p2p = computePointWithDistanceToPlane(valid_indices[k], plane.coefficients);
                 if( p2p < distance_threshold_ && p2p < min_p2p)
@@ -1436,7 +1436,7 @@ int LineBasedPlaneSegmentation::getPlaneWithMostIndices( const std::vector<Plane
 {
     int max_index = -1;
     int max_size = 0;
-    for( int i = 0; i < planes.size(); i++)
+    for( size_t i = 0; i < planes.size(); i++)
     {
         const PlaneType &plane = planes[i];
         if( plane.valid && plane.indices.size() > max_size)
@@ -1452,7 +1452,7 @@ int LineBasedPlaneSegmentation::getPlaneWithMostIndices( const std::vector<Plane
 int LineBasedPlaneSegmentation::getPlaneWithGoodIndices( const std::vector<PlaneType> &planes )
 {
     std::vector<int> good_index;
-    for(int i = 0; i < planes.size(); i++)
+    for(size_t i = 0; i < planes.size(); i++)
     {
         const PlaneType &plane = planes[i];
         if(plane.valid && !plane.over_segment)
@@ -1463,7 +1463,7 @@ int LineBasedPlaneSegmentation::getPlaneWithGoodIndices( const std::vector<Plane
     int max_size = 0;
     if(good_index.size() > 0)
     {
-        for(int i = 0; i < good_index.size(); i++)
+        for(size_t i = 0; i < good_index.size(); i++)
         {
             int idx = good_index[i];
             const PlaneType &plane = planes[idx];
@@ -1477,7 +1477,7 @@ int LineBasedPlaneSegmentation::getPlaneWithGoodIndices( const std::vector<Plane
     }
     else
     {
-        for( int i = 0; i < planes.size(); i++)
+        for( size_t i = 0; i < planes.size(); i++)
         {
             const PlaneType &plane = planes[i];
             if( plane.valid && plane.indices.size() > max_size)
@@ -1515,7 +1515,7 @@ int LineBasedPlaneSegmentation::getOnePlaneIndex(std::vector<LineType> &lines,
 #ifdef DEBUG
         cout << endl << WHITE << " - Over-segment(red):";
 
-        for( int i = 0; i < planes.size(); i++)
+        for( size_t i = 0; i < planes.size(); i++)
         {
             PlaneType &plane = planes[i];
             if(plane.over_segment)
@@ -1663,19 +1663,19 @@ void LineBasedPlaneSegmentation::selectConnectedPlaneRegionAndBoundary (int star
     std::vector<std::vector<cv::Point> >hulls;
     // find boundary
     cv::findContours( boundary_mat, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE, cv::Point(0, 0) );
-    for(int i = 0; i < contours.size(); i++)
+    for(size_t i = 0; i < contours.size(); i++)
     {
         std::vector<cv::Point> hull;
         cv::convexHull( cv::Mat(contours[i]), hull, true );
         hulls.push_back( hull );
     }
     // save boundary and hull inlier
-    for( int i = 0; i < contours[0].size(); i++)
+    for( size_t i = 0; i < contours[0].size(); i++)
     {
         cv::Point &p = contours[0][i];
         boundary_indices.push_back( p.y * cloud_width_ + p.x );
     }
-    for(int i = 0; i < hulls[0].size(); i++)
+    for(size_t i = 0; i < hulls[0].size(); i++)
     {
         cv::Point &p = hulls[0][i];
         hull_indices.push_back( p.y * cloud_width_ + p.x );
@@ -1745,7 +1745,7 @@ void LineBasedPlaneSegmentation::extractBoundary(std::vector<int> &indices,
 {
     // construct image
     cv::Mat mark = cv::Mat::zeros( cloud_height_, cloud_width_, CV_8UC1 );
-    for(int i = 0; i < indices.size(); i++)
+    for(size_t i = 0; i < indices.size(); i++)
     {
         mark.at<uchar>(indices[i]) = 255;
     }
@@ -1759,7 +1759,7 @@ void LineBasedPlaneSegmentation::extractBoundary(std::vector<int> &indices,
     //
     cv::findContours( boundary_mat, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE, cv::Point(0, 0) );
     //
-    for(int i = 0; i < contours.size(); i++)
+    for(size_t i = 0; i < contours.size(); i++)
     {
         std::vector<cv::Point> hull;
         cv::convexHull( cv::Mat(contours[i]), hull, true );
@@ -1769,12 +1769,12 @@ void LineBasedPlaneSegmentation::extractBoundary(std::vector<int> &indices,
     boundary_indices.clear();
     hull_indices.clear();
     // save boundary and hull indices
-    for( int i = 0; i < contours[0].size(); i++)
+    for( size_t i = 0; i < contours[0].size(); i++)
     {
         cv::Point &p = contours[0][i];
         boundary_indices.push_back( p.y * cloud_width_ + p.x );
     }
-    for(int i = 0; i < hulls[0].size(); i++)
+    for(size_t i = 0; i < hulls[0].size(); i++)
     {
         cv::Point &p = hulls[0][i];
         hull_indices.push_back( p.y * cloud_width_ + p.x );
@@ -1784,7 +1784,7 @@ void LineBasedPlaneSegmentation::extractBoundary(std::vector<int> &indices,
 //
 void LineBasedPlaneSegmentation::deleteInliers(const std::vector<int> inliers)
 {
-    for(int i = 0; i < inliers.size(); i++)
+    for(size_t i = 0; i < inliers.size(); i++)
     {
         indices_mask_.at<uchar>( inliers[i] ) = 0;
     }
@@ -1796,7 +1796,7 @@ void LineBasedPlaneSegmentation::extractAllPossiblePlanes(std::vector<NormalType
     planes.clear();
     //
     const int normal_min_inliers = normal_min_inliers_percentage_ * normal_smoothing_size_ * normal_smoothing_size_;
-    for(int i = 0; i < normals.size(); i++)
+    for(size_t i = 0; i < normals.size(); i++)
     {
         NormalType &normal = normals[i];
         // check if normal valid

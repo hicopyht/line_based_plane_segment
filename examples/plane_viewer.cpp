@@ -545,7 +545,7 @@ void PlaneViewer::showPlanes(pangolin::View &d_cam, pangolin::OpenGlRenderState 
         glColor3ub(100, 0, 155);
         drawWindowText(400, temp_h, "Sizes:");
         temp_h -= 20;
-        for(int i = 0; i < planes_.size(); i++)
+        for(size_t i = 0; i < planes_.size(); i++)
         {
             drawWindowText(420, temp_h, std::to_string(i)+": "+std::to_string(planes_[i].indices.size()));
             temp_h -= 20;
@@ -555,7 +555,7 @@ void PlaneViewer::showPlanes(pangolin::View &d_cam, pangolin::OpenGlRenderState 
     //
     if(display_lines)
     {
-        for( int i = 0; i < lines_.size(); i++)
+        for( size_t i = 0; i < lines_.size(); i++)
         {
             LineType &line = lines_[i];
             if(line.indices.size() == 0)
@@ -569,7 +569,7 @@ void PlaneViewer::showPlanes(pangolin::View &d_cam, pangolin::OpenGlRenderState 
     }
     if(display_normals)
     {
-        for( int i = 0; i < normals_.size(); i++)
+        for( size_t i = 0; i < normals_.size(); i++)
         {
             NormalType &normal = normals_[i];
             if(normal.indices.size() == 0)
@@ -583,7 +583,7 @@ void PlaneViewer::showPlanes(pangolin::View &d_cam, pangolin::OpenGlRenderState 
     }
     if(display_planes)
     {
-        for( int i = 0; i < planes_.size(); i++)
+        for( size_t i = 0; i < planes_.size(); i++)
         {
             PlaneType &plane = planes_[i];
             if(plane.indices.size() == 0)
@@ -604,7 +604,7 @@ void PlaneViewer::showPlanes(pangolin::View &d_cam, pangolin::OpenGlRenderState 
     }
     if(display_boundary)
     {
-        for( int i = 0; i < planes_.size(); i++)
+        for( size_t i = 0; i < planes_.size(); i++)
         {
             PlaneType &plane = planes_[i];
             if(plane.boundary_indices.size() == 0)
@@ -615,7 +615,7 @@ void PlaneViewer::showPlanes(pangolin::View &d_cam, pangolin::OpenGlRenderState 
     }
     if(display_hull)
     {
-        for( int i = 0; i < planes_.size(); i++)
+        for( size_t i = 0; i < planes_.size(); i++)
         {
             PlaneType &plane = planes_[i];
             if(plane.hull_indices.size() == 0)
@@ -627,7 +627,7 @@ void PlaneViewer::showPlanes(pangolin::View &d_cam, pangolin::OpenGlRenderState 
     if(display_residual)
     {
         pcl::IndicesPtr indices(new std::vector<int>);
-        for( int i = 0; i < planes_.size(); i++)
+        for( size_t i = 0; i < planes_.size(); i++)
         {
             PlaneType &plane = planes_[i];
             if(plane.indices.size() == 0)
@@ -672,7 +672,7 @@ void PlaneViewer::showRuntimes(pangolin::View &d_cam, pangolin::OpenGlRenderStat
     drawWindowText(10, height, "Runtimes");
     glColor3ub(255, 140, 0);
     float total = 0;
-    for( int i = 0; i < steps_.size() && i < runtimes_.size(); i++)
+    for( size_t i = 0; i < steps_.size() && i < runtimes_.size(); i++)
     {
         total += runtimes_[i];
         drawWindowText(10, height - 20*(i+1), steps_[i]+": "+std::to_string(runtimes_[i])+" ms");
@@ -746,7 +746,7 @@ void PlaneViewer::drawPointCloud(const pcl::PointCloud<pcl::PointXYZRGBA> &cloud
     glPointSize(point_size);
     glBegin(GL_POINTS);
 
-    for(int i = 0; i < indices.size(); i++)
+    for(size_t i = 0; i < indices.size(); i++)
     {
         const pcl::PointXYZRGBA &pt = cloud.points[indices[i]];
         if(isnan(pt.z) || isnan(pt.x) || isnan(pt.y))
@@ -788,7 +788,7 @@ void PlaneViewer::drawPointCloud(const pcl::PointCloud<PT> &cloud,
     glPointSize(point_size);
     glColor4ub(r, g, b, a);
     glBegin(GL_POINTS);
-    for(int i = 0; i < indices.size(); i++)
+    for(size_t i = 0; i < indices.size(); i++)
     {
         const pcl::PointXYZRGBA &pt = cloud.points[indices[i]];
         if(isnan(pt.z) || isnan(pt.x) || isnan(pt.y))
@@ -808,7 +808,7 @@ void PlaneViewer::drawCloudHull(const pcl::PointCloud<PT> &cloud,
     glLineWidth(line_width);
     glColor4ub(r, g, b, a);
     glBegin(GL_LINE_LOOP);
-    for(int i = 0; i < indices.size(); i++)
+    for(size_t i = 0; i < indices.size(); i++)
     {
         const pcl::PointXYZRGBA &pt = cloud.points[indices[i]];
         if(isnan(pt.z) || isnan(pt.x) || isnan(pt.y))

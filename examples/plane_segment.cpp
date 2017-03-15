@@ -258,7 +258,7 @@ void PlaneSegment::ompsSegment(const cv::Mat &image_rgb, const cv::Mat &image_de
     VectorNormals normals;
     VectorPlanes planes;
     // convert format
-    for( int i = 0; i < segment_result.regions.size(); i++)
+    for( size_t i = 0; i < segment_result.regions.size(); i++)
     {
         pcl::ModelCoefficients &coef = segment_result.model_coeffs[i];
         pcl::PointIndices &indices = segment_result.inlier_indices[i];
